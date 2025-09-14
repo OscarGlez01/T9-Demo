@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>T9 Keypad Replica</title>
+  <style>
+    :root{--bg:#0f1724;--card:#0b1220;--accent:#06b6d4;--muted:#9ca3af;--glass:rgba(255,255,255,0.03)}
+    html,body{height:100%;margin:0;font-family:Inter,ui-sans-serif,system-ui,Segoe UI,Roboto,'Helvetica Neue',Arial}
+    body{display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,#071029 0%, #081426 100%);color:#e6eef6}
+    .container{width:360px;background:var(--card);border-radius:12px;padding:18px;box-shadow:0 10px 30px rgba(2,6,23,0.6)}
+    .screen{background:var(--glass);border-radius:8px;padding:12px;min-height:72px;margin-bottom:12px;display:flex;flex-direction:column;gap:6px}
+    #text{font-size:20px;line-height:1.2;word-break:break-word}
+    .meta{display:flex;justify-content:space-between;align-items:center;color:var(--muted);font-size:12px}
+    .keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+    button.key{background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(0,0,0,0.05));border:1px solid rgba(255,255,255,0.04);padding:14px;border-radius:8px;font-size:16px;color:inherit;cursor:pointer}
+    button.key.small{padding:10px}
+    .label{display:block;font-size:11px;color:var(--muted);margin-top:6px}
+    .row-ctrl{display:flex;gap:10px;margin-top:10px}
+    .big{grid-column:span 3}
+    .hint{font-size:12px;color:var(--muted);margin-top:8px}
+    footer{margin-top:12px;color:var(--muted);font-size:12px;text-align:center}
+    /* Simple responsive */
+    @media (max-width:420px){.container{width:92vw}}
+  </style>
+</head>
+<body>
+  <div class="container" role="application" aria-label="T9 keypad replica">
+    <div class="screen" aria-live="polite">
+      <div id="text" aria-label="message text"></div>
+      <div class="meta"><span id="status">Ready</span><span id="caret">|</span></div>
+    </div>
+
+    <div class="keypad" id="keypad">
+      <!-- 1 has symbols in some phones -->
+      <button class="key small" data-key="1"><div>1</div><span class="label">.,?'</span></button>
+      <button class="key" data-key="2"><div>2</div><span class="label">ABC</span></button>
+      <button class="key" data-key="3"><div>3</div><span class="label">DEF</span></button>
+
+      <button class="key" data-key="4"><div>4</div><span class="label">GHI</span></button>
+      <button class="key" data-key="5"><div>5</div><span class="label">JKL</span></button>
+      <button class="key" data-key="6"><div>6</div><span class="label">MNO</span></button>
+
+      <button class="key" data-key="7"><div>7</div><span class="label">PQRS</span></button>
+      <button class="key" data-key="8"><div>8</div><span class="label">TUV</span></button>
+      <button class="key" data-key="9"><div>9</div><span class="label">WXYZ</span></button>
+
+      <button class="key" data-key="*">*</button>
+      <button class="key" data-key="0"><div>0</div><span class="label">space</span></button>
+      <button class="key" data-key="#">#</button>
+    </div>
+
+    <div class="row-ctrl">
+      <button id="backspace" class="key small">Backspace</button>
+      <button id="enter" class="key small">Enter</button>
+      <button id="clear" class="key small">Clear</button>
+    </div>
+
+    <div class="hint">Tip: Tap the same number repeatedly to cycle letters (multi‑tap). Wait ~800ms to commit the character.</div>
+    <footer>Replica: multi‑tap T9-style input (no dictionary predictive here). Ask if you want predictive T9!</footer>
+  </div>
+
+  <script>
+    // letter map as on classic phones
+    const map = {
+      '1': ['.', ',', '?', '\u0027'],
+      '2': ['A','B','C'],
+      '3': ['D','E','F'],
+      '4': ['G','H','I'],
+      '5': ['J','K','L'],
+      '6': ['M','N','O'],
+      '7': ['P','Q','R','S'],
+      '8': ['T','U','V'],
+      '9': ['W','X','Y','Z'],
+      '0': [' ']
+    };
+
+    const OUT = document.getElementById('text');
+    const status = document.getElementById('status');
+
+    let lastKey = null;
+    let lastTime = 0;
+    let index = 0; // index within current key's letters
+    const TIMEOUT = 800; // ms to wait before committing
+    let timeoutId = null;
+
+    function commitPending() {
+      // clear pending state
+      lastKey = null; index = 0;
+      if (timeoutId) { clearTimeout(timeoutId); timeoutId = null }
+      status.textContent = 'Ready';
+    }
+
+    function pressKey(k) {
+      const now = Date.now();
+      // If repeating same key quickly, advance cycle
+      if (k === lastKey && (now - lastTime) < TIMEOUT) {
+        // cycle
+        index = (index + 1) % (map[k] ? map[k].length : 1);
+        // replace last char in output with new letter
+        replaceLast(map[k][index]);
+        status.textContent = `Cycling \u2014 ${map[k][index]}`;
+        // reset timeout
+        if (timeoutId) clearTimeout(timeoutId);
+        timeoutId = setTimeout(commitPending, TIMEOUT);
+      } else {
+        // commit previous pending (if any)
+        if (lastKey !== null) { commitPending(); }
+        // start new char
+        lastKey = k;
+        index = 0;
+        const char = (map[k] && map[k][0]) ? map[k][0] : k;
+        appendChar(char);
+        status.textContent = `Typing \u2014 ${char}`;
+        if (timeoutId) clearTimeout(timeoutId);
+        timeoutId = setTimeout(commitPending, TIMEOUT);
+      }
+      lastTime = now;
+    }
+
+    function appendChar(ch) {
+      OUT.textContent = OUT.textContent + ch;
+    }
+    function replaceLast(ch) {
+      if (!OUT.textContent) { OUT.textContent = ch; return; }
+      OUT.textContent = OUT.textContent.slice(0, -1) + ch;
+    }
+
+    // wire buttons
+    document.getElementById('keypad').addEventListener('click', (ev) => {
+      const btn = ev.target.closest('button');
+      if (!btn) return;
+      const k = btn.dataset.key;
+      if (!k) return;
+      // special keys
+      if (k === '*') { /* we could add special behaviour */ status.textContent = 'Pressed *'; commitPending(); appendChar('*'); return; }
+      if (k === '#') { status.textContent = 'Pressed #'; commitPending(); appendChar('#'); return; }
+      if (k === '0') { // space
+        pressKey('0');
+        return;
+      }
+      if (k === '1') { pressKey('1'); return; }
+      // numbers 2-9
+      if (/^[2-9]$/.test(k)) { pressKey(k); return; }
+    });
+
+    // control buttons
+    document.getElementById('backspace').addEventListener('click', ()=>{
+      // if there's a pending char (lastKey not null) cancel it and remove last char
+      if (lastKey !== null) { commitPending(); }
+      OUT.textContent = OUT.textContent.slice(0,-1);
+      status.textContent = 'Backspace';
+    });
+    document.getElementById('clear').addEventListener('click', ()=>{ OUT.textContent=''; commitPending(); status.textContent='Cleared'; });
+    document.getElementById('enter').addEventListener('click', ()=>{ OUT.textContent += '\n'; commitPending(); status.textContent='New line'; });
+
+    // caret blinking (visual)
+    (function blinkCaret(){
+      const caret = document.getElementById('caret');
+      let on = true;
+      setInterval(()=>{ caret.style.opacity = on? '1':'0'; on = !on }, 600);
+    })();
+
+    // keyboard support for convenience (optional)
+    window.addEventListener('keydown', (e)=>{
+      // map 0-9 keys
+      if (/^[0-9]$/.test(e.key)) {
+        const key = e.key;
+        // prevent normal typing
+        e.preventDefault();
+        // simulate press
+        pressKey(key);
+      } else if (e.key === 'Backspace') { document.getElementById('backspace').click(); }
+      else if (e.key === 'Enter') { document.getElementById('enter').click(); }
+    });
+
+  </script>
+</body>
+</html>
